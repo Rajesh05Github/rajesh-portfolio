@@ -17,25 +17,23 @@ export default async function Icon() {
     "•";
 
   return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#20b2a6",
-          color: "#ffffff",
-          fontSize: 18,
-          fontWeight: 700,
-          fontFamily: "sans-serif",
-          borderRadius: 7,
-        }}
-      >
-        {mark}
-      </div>
-    ),
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#20b2a6",
+        color: "#ffffff",
+        fontSize: 18,
+        fontWeight: 700,
+        fontFamily: "sans-serif",
+        borderRadius: 7,
+      }}
+    >
+      {mark}
+    </div>,
     { ...size },
   );
 }
