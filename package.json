@@ -23,6 +23,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.33.0",
     "@langchain/core": "^1.2.9",
     "@langchain/langgraph": "^1.4.14",
     "@langchain/openai": "^1.5.11",
