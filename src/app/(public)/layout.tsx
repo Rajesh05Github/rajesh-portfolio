@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Navbar } from "@/components/portfolio/navbar";
 import { Footer } from "@/components/portfolio/footer";
 import { ChatWidget } from "@/components/chat/chat-widget";
@@ -16,6 +17,28 @@ import { ThemeModeProvider } from "@/components/theme/theme-mode-provider";
 // bake in stale content). Forcing dynamic rendering here covers every page
 // in the (public) route group.
 export const dynamic = "force-dynamic";
+
+// Overrides the root layout's generic "Portfolio" fallback (docs: that
+// title was a Phase 5 placeholder never revisited) with the real owner's
+// name, once there's a real Profile row to read it from. `template` shapes
+// how a page-specific title (e.g. a future `/projects/[slug]`) combines
+// with this — "Some Project | Rajesh's Portfolio", not just the page name
+// alone.
+export async function generateMetadata(): Promise<Metadata> {
+  const profile = await getProfile();
+  const name = profile?.name?.trim();
+  if (!name) return {};
+  return {
+    // `absolute` (not `default`) is what actually breaks out of the root
+    // layout's own template ("%s | Portfolio") — with `default` alone, Next
+    // still wraps this in that ancestor template, producing the wrong
+    // "Rajesh's Portfolio | Portfolio" double-up (verified live).
+    title: {
+      absolute: `${name}'s Portfolio`,
+      template: `%s | ${name}'s Portfolio`,
+    },
+  };
+}
 
 export default async function PublicLayout({
   children,
