@@ -187,14 +187,24 @@ jobs:
             --push .
 
       - name: Apply database migrations
+        # `job start --image <x>` replaces the execution's whole container
+        # spec with just that image — it silently drops the DATABASE_URL/
+        # REDIS_URL secretref env vars configured on the job's own template
+        # (found the hard way: the migration ran with no DATABASE_URL at
+        # all, so every table was missing and the app 500'd on every page).
+        # Updating the job's template first, then starting it with no
+        # `--image` override, keeps the persisted env vars intact.
         run: |
           docker buildx build --target migrate \
             -t "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-migrate:${{ github.sha }}" \
             --push .
-          az containerapp job start \
+          az containerapp job update \
             --name advportfolio-migrate \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --image "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-migrate:${{ github.sha }}"
+          az containerapp job start \
+            --name advportfolio-migrate \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
 
       - name: Update Container Apps to the new image
         run: |
