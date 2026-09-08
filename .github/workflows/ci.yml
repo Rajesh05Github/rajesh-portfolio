@@ -1,0 +1,205 @@
+name: CI/CD
+
+# docs/deployment.md §4: every stage below the "build" line runs on every
+# push and pull request. Only the final deploy job is branch- and
+# flag-gated — see its own `if:` condition for why.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A placeholder DATABASE_URL/REDIS_URL is needed by `npm run build` for the
+# exact same reason it's needed as a Docker build-arg (docs/deployment.md
+# §2's build-time gotcha, found in Phase 19): Next's page-data-collection
+# step imports every route module, and `lib/db/client.ts`/
+# `lib/redis/client.ts` throw at import time if the env var is entirely
+# missing. No job actually connects to these placeholder values.
+env:
+  PLACEHOLDER_DATABASE_URL: postgresql://placeholder:placeholder@placeholder:5432/placeholder
+  PLACEHOLDER_REDIS_URL: redis://placeholder:6379
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm test
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    # Real Postgres (with pgvector) and Redis service containers — the same
+    # "no mocking infrastructure" stance as docs/testing.md §2, just running
+    # inside CI instead of the dev-stack Docker Compose.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: advportfolio
+          POSTGRES_PASSWORD: advportfolio
+          POSTGRES_DB: advportfolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U advportfolio -d advportfolio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://advportfolio:advportfolio@localhost:5432/advportfolio_test
+      REDIS_URL: redis://localhost:6379/1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - name: Enable pgvector and apply migrations
+        run: |
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector"
+          npx drizzle-kit migrate
+      - run: npm run test:integration
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+        env:
+          DATABASE_URL: ${{ env.PLACEHOLDER_DATABASE_URL }}
+          REDIS_URL: ${{ env.PLACEHOLDER_REDIS_URL }}
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - name: Dependency audit (high/critical only — low-severity noise doesn't block a deploy)
+        run: npm audit --audit-level=high
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [lint-typecheck, unit-tests, integration-tests, build, security-scan]
+    strategy:
+      matrix:
+        target: [runner, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          build-args: |
+            DATABASE_URL=${{ env.PLACEHOLDER_DATABASE_URL }}
+            REDIS_URL=${{ env.PLACEHOLDER_REDIS_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Real Azure deploy code (docs/deployment.md §3, ADR-0009) — not a stub.
+  # It only runs once `vars.AZURE_DEPLOY_ENABLED` is explicitly set to
+  # "true" on the repository, since no Azure resources are provisioned yet
+  # (Phase 21, TBD). Without that variable this job is skipped with a clear
+  # reason rather than failing on missing secrets — a clone of this repo
+  # shouldn't see a red X for infrastructure it hasn't set up.
+  # Assumes the target resources already exist (the Container Apps
+  # `advportfolio-app`/`advportfolio-worker` and Container Apps Job
+  # `advportfolio-migrate`, an ACR, a resource group) — this job updates
+  # them to a new image, it doesn't provision them (Phase 21, via Bicep or
+  # Terraform, TBD).
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build and push images to Azure Container Registry
+        run: |
+          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-app:${{ github.sha }}" --target runner .
+          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-worker:${{ github.sha }}" --target worker .
+
+      - name: Apply database migrations
+        run: |
+          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-migrate:${{ github.sha }}" --target migrate .
+          az containerapp job start \
+            --name advportfolio-migrate \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-migrate:${{ github.sha }}"
+
+      - name: Update Container Apps to the new image
+        run: |
+          az containerapp update \
+            --name advportfolio-app \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-app:${{ github.sha }}"
+          az containerapp update \
+            --name advportfolio-worker \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-worker:${{ github.sha }}"
+
+      - name: Health check
+        run: |
+          # "/" always returns 200 regardless of seeded content (even a
+          # completely empty database renders a graceful "no profile
+          # configured yet" page, verified in Phase 19) — unlike
+          # `/api/resume`, which legitimately 404s when no resume is
+          # active and would make this check falsely fail.
+          for i in $(seq 1 10); do
+            if curl -sf "${{ vars.AZURE_APP_URL }}/" -o /dev/null; then
+              echo "Health check passed."
+              exit 0
+            fi
+            echo "Waiting for the new revision to become healthy ($i/10)..."
+            sleep 10
+          done
+          echo "Health check failed after the new revision was deployed."
+          exit 1

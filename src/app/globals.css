@@ -1,0 +1,327 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens ported from the reference portfolio (../portfolio/src/index.css),
+ * see docs/existing-system-audit.md §4 and §9. These are also the DEFAULT
+ * values of the theme engine (Phase 6, docs/architecture.md §13-16) — the
+ * "Glass" ThemePreset's config matches these exactly, so activating it
+ * unmodified is a visual no-op. The admin panel always uses these static
+ * defaults (never the runtime-overridden values below); only the (public)
+ * route group's wrapper element overrides them, per theme, via
+ * src/lib/theme/apply.ts.
+ */
+@theme {
+  --color-background: #0f1418;
+  --color-foreground: #f0f2f5;
+
+  --color-card: #141a1f;
+
+  --color-primary: #20b2a6;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #1f2830;
+  --color-secondary-foreground: #20b2a6;
+
+  --color-muted: #252e37;
+  --color-muted-foreground: #7a8491;
+
+  --color-border: #242b32;
+
+  --radius: 0.75rem;
+
+  --color-highlight: #f5a623;
+  --color-surface: #1a2329;
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-playfair);
+}
+
+/*
+ * Theme-derived tokens that aren't part of the admin-editable color/font set
+ * (src/lib/theme/config.ts) — plain custom properties, not Tailwind design
+ * tokens, so they live outside `@theme`. Defaults here match the block
+ * above exactly; a customized theme overrides all of these on the (public)
+ * wrapper element (src/lib/theme/apply.ts), not just the handful that are
+ * literally colors/fonts.
+ */
+:root {
+  /* "inter", matching DEFAULT_THEME_CONFIG.typography.headingFont — see the
+     comment there for why this isn't "playfair" (that would make every
+     heading serif site-wide, not just the deliberate accent-span flourish
+     each section already renders in Playfair regardless of this token). */
+  --font-heading: var(--font-inter);
+  --font-weight-heading: 700;
+  --font-weight-body: 400;
+
+  --layout-max-width: 80rem;
+  --layout-section-spacing: 8rem;
+  --layout-container-padding: 1.5rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans), sans-serif;
+    font-weight: var(--font-weight-body);
+  }
+
+  /* !important is deliberate here: every heading already carries a Tailwind
+     font-bold/font-semibold utility class inline (utilities win over @layer
+     base by design), which would otherwise silently defeat the theme's
+     headingWeight setting on every single section component. This one rule
+     is the alternative to editing font-weight out of ~9 component files. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading), serif;
+    font-weight: var(--font-weight-heading) !important;
+  }
+}
+
+@layer components {
+  .glass {
+    background-color: color-mix(in srgb, var(--color-surface) 50%, transparent);
+    backdrop-filter: blur(16px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  }
+
+  .glass-strong {
+    background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  }
+
+  .glow-text {
+    text-shadow: 0 0 30px
+      color-mix(in srgb, var(--color-primary) 50%, transparent);
+  }
+
+  .glow-border {
+    box-shadow:
+      0 0 20px color-mix(in srgb, var(--color-primary) 20%, transparent),
+      inset 0 0 20px color-mix(in srgb, var(--color-primary) 5%, transparent);
+  }
+
+  /* Layout tokens (components.radius doesn't need a class — it overrides
+     Tailwind's own --radius-* variables directly, see src/lib/theme/radius.ts) */
+  .container-themed {
+    max-width: var(--layout-max-width);
+    margin-inline: auto;
+    padding-inline: var(--layout-container-padding);
+  }
+
+  .section-py {
+    padding-top: var(--layout-section-spacing);
+    padding-bottom: var(--layout-section-spacing);
+  }
+
+  /* components.buttonStyle — applied to the primary CTA buttons (Navbar,
+     Hero); admin's own buttons intentionally don't use this class (docs/
+     architecture.md — admin UI stays visually distinct from the themed
+     public site regardless of what the site owner picks). */
+  .btn-primary {
+    border-radius: 9999px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+    border: 1px solid transparent;
+    box-shadow: 0 10px 15px -3px
+      color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+
+  [data-button-style="outline"] .btn-primary {
+    background-color: transparent;
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    box-shadow: none;
+  }
+
+  [data-button-style="ghost"] .btn-primary {
+    background-color: transparent;
+    color: var(--color-primary);
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+@layer utilities {
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+      filter: blur(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes slow-drift {
+    0%,
+    100% {
+      transform: translate(0, 0);
+    }
+    25% {
+      transform: translate(20px, -30px);
+    }
+    50% {
+      transform: translate(-15px, -20px);
+    }
+    75% {
+      transform: translate(30px, 10px);
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.8s ease-out both;
+  }
+
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .animate-marquee {
+    animation: marquee 30s linear infinite;
+  }
+
+  /* Same keyframes, opposite direction — for a second/third marquee row
+     scrolling the other way (Skills section), rather than duplicating the
+     keyframes with swapped from/to values. */
+  .animate-marquee-reverse {
+    animation: marquee 30s linear infinite reverse;
+  }
+
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+  .animation-delay-400 {
+    animation-delay: 400ms;
+  }
+  .animation-delay-500 {
+    animation-delay: 500ms;
+  }
+  .animation-delay-600 {
+    animation-delay: 600ms;
+  }
+  .animation-delay-800 {
+    animation-delay: 800ms;
+  }
+
+  @keyframes animated-border {
+    0% {
+      stroke-dashoffset: 400;
+    }
+    100% {
+      stroke-dashoffset: -550;
+    }
+  }
+
+  .group:hover .animated-border-path {
+    animation: animated-border 1.5s linear infinite;
+  }
+
+  .animated-border:hover {
+    background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 0 20px
+      color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+
+  .timeline-glow {
+    box-shadow:
+      0 0 40px color-mix(in srgb, var(--color-primary) 35%, transparent),
+      0 0 80px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+}
+
+/*
+ * Theme effect/component-style toggles (docs/architecture.md §13-16). These
+ * are scoped by data attributes set on the (public) route group's wrapper
+ * element (src/lib/theme/apply.ts) — the admin panel never carries these
+ * attributes, so it's unaffected regardless of what the site owner picks.
+ */
+[data-effects-animations="false"] [class*="animate-"] {
+  animation: none !important;
+}
+
+[data-effects-gradients="false"] .decorative-glow {
+  display: none;
+}
+
+[data-card-style="solid"] .glass,
+[data-card-style="solid"] .glass-strong {
+  backdrop-filter: none;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+[data-card-style="bordered"] .glass,
+[data-card-style="bordered"] .glass-strong {
+  backdrop-filter: none;
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+}
+
+[data-shadow-style="none"] .glow-border {
+  box-shadow: none;
+}
+
+[data-shadow-style="none"] .glow-text {
+  text-shadow: none;
+}
+
+[data-shadow-style="none"] .timeline-glow {
+  box-shadow: none;
+}
+
+[data-shadow-style="glow"] .glow-border {
+  box-shadow:
+    0 0 35px color-mix(in srgb, var(--color-primary) 35%, transparent),
+    inset 0 0 30px color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+[data-shadow-style="glow"] .glow-text {
+  text-shadow: 0 0 45px
+    color-mix(in srgb, var(--color-primary) 70%, transparent);
+}
