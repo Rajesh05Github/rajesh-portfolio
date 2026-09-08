@@ -20,9 +20,21 @@ export function getClientIp(request: NextRequest): string {
  * scheme (docs/security.md §11). Requests with no Origin header (e.g. some
  * same-origin navigations, non-browser API clients using session-less auth)
  * are allowed through — this check only rejects a *mismatched* Origin.
+ *
+ * Compares hostnames only, not full origins (protocol + host) — behind a
+ * TLS-terminating reverse proxy (Azure Container Apps' ingress, any
+ * standard load balancer setup), the proxy-to-container hop is plain HTTP,
+ * so Next.js's own `request.nextUrl` resolves to `http://`, while a real
+ * browser's Origin header correctly says `https://`. Comparing full origins
+ * rejects every legitimate request in that (extremely common) deployment
+ * shape; a protocol downgrade isn't the thing this check exists to catch.
  */
 export function isSameOriginRequest(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
-  return origin === request.nextUrl.origin;
+  try {
+    return new URL(origin).host === request.nextUrl.host;
+  } catch {
+    return false;
+  }
 }
