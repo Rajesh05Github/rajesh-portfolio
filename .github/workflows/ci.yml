@@ -162,14 +162,35 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # `az acr build` (ACR Tasks — building remotely inside the registry)
+      # is disallowed on some subscriptions (e.g. Azure for Students:
+      # "TasksOperationsNotAllowed"). Building locally on the runner and
+      # pushing the result — exactly what the `docker-build` job above
+      # already does for validation, just with `push: true` and a real
+      # tag this time — works regardless of that restriction.
+      - name: Log in to Azure Container Registry
+        run: az acr login --name "${{ vars.AZURE_ACR_NAME }}"
+
+      - uses: docker/setup-buildx-action@v3
+
       - name: Build and push images to Azure Container Registry
         run: |
-          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-app:${{ github.sha }}" --target runner .
-          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-worker:${{ github.sha }}" --target worker .
+          docker buildx build --target runner \
+            --build-arg DATABASE_URL=${{ env.PLACEHOLDER_DATABASE_URL }} \
+            --build-arg REDIS_URL=${{ env.PLACEHOLDER_REDIS_URL }} \
+            -t "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-app:${{ github.sha }}" \
+            --push .
+          docker buildx build --target worker \
+            --build-arg DATABASE_URL=${{ env.PLACEHOLDER_DATABASE_URL }} \
+            --build-arg REDIS_URL=${{ env.PLACEHOLDER_REDIS_URL }} \
+            -t "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-worker:${{ github.sha }}" \
+            --push .
 
       - name: Apply database migrations
         run: |
-          az acr build --registry "${{ vars.AZURE_ACR_NAME }}" --image "advportfolio-migrate:${{ github.sha }}" --target migrate .
+          docker buildx build --target migrate \
+            -t "${{ vars.AZURE_ACR_NAME }}.azurecr.io/advportfolio-migrate:${{ github.sha }}" \
+            --push .
           az containerapp job start \
             --name advportfolio-migrate \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
