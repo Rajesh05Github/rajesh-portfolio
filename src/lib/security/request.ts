@@ -21,19 +21,23 @@ export function getClientIp(request: NextRequest): string {
  * same-origin navigations, non-browser API clients using session-less auth)
  * are allowed through — this check only rejects a *mismatched* Origin.
  *
- * Compares hostnames only, not full origins (protocol + host) — behind a
- * TLS-terminating reverse proxy (Azure Container Apps' ingress, any
- * standard load balancer setup), the proxy-to-container hop is plain HTTP,
- * so Next.js's own `request.nextUrl` resolves to `http://`, while a real
- * browser's Origin header correctly says `https://`. Comparing full origins
- * rejects every legitimate request in that (extremely common) deployment
- * shape; a protocol downgrade isn't the thing this check exists to catch.
+ * Deliberately does NOT use `request.nextUrl.host` — confirmed via a live
+ * diagnostic against the Azure deployment that it resolves to the Next.js
+ * standalone server's own bind address (`0.0.0.0:3000`), not the real
+ * incoming Host, so every production request failed this check regardless
+ * of Origin. `X-Forwarded-Host`/`Host` are the request's own headers as
+ * received, unaffected by whatever Next.js does internally, and Azure
+ * Container Apps' ingress (like any standard reverse proxy) sets them
+ * correctly — verified via the same diagnostic.
  */
 export function isSameOriginRequest(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true;
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (!host) return false;
   try {
-    return new URL(origin).host === request.nextUrl.host;
+    return new URL(origin).host === host;
   } catch {
     return false;
   }
