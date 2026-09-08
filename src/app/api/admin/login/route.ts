@@ -28,8 +28,16 @@ async function getDummyHash(): Promise<string> {
 
 export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request)) {
+    // TEMPORARY diagnostic — remove once the mismatch is identified.
     return NextResponse.json(
-      { error: "Invalid request origin." },
+      {
+        error: "Invalid request origin.",
+        debugOrigin: request.headers.get("origin"),
+        debugNextUrlHost: request.nextUrl.host,
+        debugHostHeader: request.headers.get("host"),
+        debugForwardedHost: request.headers.get("x-forwarded-host"),
+        debugForwardedProto: request.headers.get("x-forwarded-proto"),
+      },
       { status: 403 },
     );
   }
